@@ -1,108 +1,61 @@
-"""
-Run the complete Biomedical AI MCP test suite.
+"""Run the complete Biomedical AI MCP test suite."""
 
-The test database is prepared before importing the test modules so that
-server.py can connect to a valid SQLite schema in a clean environment,
-including GitHub Actions CI.
-"""
-
+import sys
 import unittest
 
 
-# ============================================================
-# PREPARE TEST DATABASE
-# ============================================================
-
-from test_database_setup import ensure_test_database
-
-ensure_test_database()
-
-
-# ============================================================
-# IMPORT TEST MODULES
-# ============================================================
-
-import test_agent_alignment
-import test_config
-import test_config_integration
-import test_error_safety
-import test_pdf_limits
-import test_security
-import test_security_mcp
-import test_sql_security
-import test_tool_limits
-import test_production_hardening
-
-
-# ============================================================
-# TEST MODULE LIST
-# ============================================================
-
 TEST_MODULES = [
-    test_agent_alignment,
-    test_config,
-    test_config_integration,
-    test_error_safety,
-    test_pdf_limits,
-    test_security,
-    test_security_mcp,
-    test_sql_security,
-    test_tool_limits,
-    test_production_hardening,
+    "tests.test_database_setup",
+    "tests.test_agent_alignment",
+    "tests.test_config",
+    "tests.test_config_integration",
+    "tests.test_error_safety",
+    "tests.test_pdf_limits",
+    "tests.test_security",
+    "tests.test_security_mcp",
+    "tests.test_sql_security",
+    "tests.test_tool_limits",
+    "tests.test_production_hardening",
+    "tests.test_phase9_planner",
+    "tests.test_phase9_2_executor",
+    "tests.test_phase9_3_failure_paths",
+    "tests.test_phase9_4_planner",
+    "tests.test_phase9_5_answer",
+    "tests.test_phase10_4_logging_config",
+    "tests.test_phase10_5_logging_cleanup",
+    "tests.test_phase10_6_observability",
 ]
 
 
-# ============================================================
-# BUILD TEST SUITE
-# ============================================================
-
-def build_test_suite():
-    """
-    Build one unittest suite containing every project test module.
-    """
-
+def main():
+    """Run all registered project tests."""
     loader = unittest.TestLoader()
-
     suite = unittest.TestSuite()
 
-    for module in TEST_MODULES:
-        suite.addTests(
-            loader.loadTestsFromModule(module)
-        )
-
-    return suite
-
-
-# ============================================================
-# RUN TESTS
-# ============================================================
-
-def main():
-    """
-    Run the complete test suite.
-
-    Returns:
-        0 when every test passes.
-        1 when one or more tests fail.
-    """
-
-    suite = build_test_suite()
+    for module_name in TEST_MODULES:
+        suite.addTests(loader.loadTestsFromName(module_name))
 
     runner = unittest.TextTestRunner(
-        verbosity=2
+        verbosity=2,
     )
 
     result = runner.run(suite)
 
+    print()
+    print("=" * 70)
+
     if result.wasSuccessful():
-        return 0
+        print("ALL TESTS PASSED")
+    else:
+        print("TEST SUITE FAILED")
 
-    return 1
+    print("=" * 70)
+    print(f"Tests run: {result.testsRun}")
+    print(f"Failures:  {len(result.failures)}")
+    print(f"Errors:    {len(result.errors)}")
 
+    return 0 if result.wasSuccessful() else 1
 
-# ============================================================
-# ENTRY POINT
-# ============================================================
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())

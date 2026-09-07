@@ -1,170 +1,280 @@
-# Architecture
+# System Architecture
 
-## High-level flow
+## Purpose
 
-```mermaid
-flowchart TD
-    U[User / Research Question] --> A[Python Agent]
-    A --> P[Tool Planner]
+The Biomedical AI MCP project connects structured biomedical experiment data and unstructured research documents through an MCP interface and a deterministic research-agent layer.
 
-    P --> E[Experiment MCP Tools]
-    P --> R[Research Evidence MCP Tool]
-    P --> D[Document MCP Tools]
-    P --> C[Dilution Calculator]
+## High-Level Flow
 
-    E --> DB[(SQLite)]
-    D --> DB
-    D --> PDF[Research PDFs]
-    R --> RET[Local Retrieval Pipeline]
-
-    RET --> Q[Query Expansion]
-    Q --> M[Concept and Mechanism Detection]
-    M --> PR[Page Retrieval]
-    PR --> S[Sentence Scoring]
-    S --> T[Topic Relevance]
-    T --> F[Mechanism Filtering]
-    F --> ES[Evidence Strength]
-    ES --> PV[Provenance]
-
-    E --> X[Cross-Tool Alignment]
-    PV --> X
-
-    X --> OUT[Research Answer]
-    C --> OUT
+```text
+User Question
+     |
+     v
+agent_app.py
+     |
+     v
+agent_planner.py
+     |
+     |  deterministic tool plan
+     v
+agent_executor.py
+     |
+     +--------------------+
+     |                    |
+     v                    v
+MCP Server           Execution Status
+server.py
+     |
+     +------------------+-------------------+
+     |                  |                   |
+     v                  v                   v
+Experiment Tools   Research Tools     Document Tools
+     |                  |                   |
+     v                  v                   v
+SQLite             retrieval.py       PDF/content
+     |                  |                   |
+     +------------------+-------------------+
+                        |
+                        v
+                 agent_validator.py
+                        |
+                        v
+                  agent_answer.py
+                        |
+                        v
+                 Structured Answer
 ```
 
-## Components
+## Agent Layer
 
-### 1. Agent
+### Planner
 
-`agent.py` is the user-facing orchestration layer.
+`agent_planner.py` determines which MCP tools are needed.
 
-Responsibilities:
+Planning is deterministic and supports multiple domains. For example, a question requesting both research mechanisms and related experiments can select:
 
-- accept a research question
-- classify the question
-- identify required MCP tools
-- extract structured experiment filters
-- execute one or more tools
-- compare results from different tools
-- format evidence, alignment, and provenance
+```text
+search_research_evidence
+search_experiments
+```
 
-The planner can select multiple tools for a single question.
+The planner avoids duplicate tools and uses a deterministic ordering.
 
-### 2. MCP server
+### Executor
+
+`agent_executor.py` executes the selected tools.
+
+Important behavior:
+
+- validates the question
+- dispatches supported tools
+- normalizes MCP results
+- detects MCP `is_error` results
+- detects tool-level error dictionaries
+- isolates individual failures
+- records per-tool execution status
+- logs execution lifecycle events
+- measures tool duration
+
+A failure in one tool does not automatically discard successful results from other tools.
+
+### Validator
+
+`agent_validator.py` checks relationships between retrieved evidence and structured experiment information.
+
+The validation layer is designed to prevent an important research mistake: treating a literature statement as proof that a particular database experiment produced the same result.
+
+### Answer Generator
+
+`agent_answer.py` formats evidence, experiments, document metadata, validation, and provenance into a structured research response.
+
+## MCP Server Layer
 
 `server.py` exposes the biomedical capabilities through MCP.
 
-It provides:
+### Tool categories
 
-- tools
-- resources
-- resource templates
-- validation
-- database access
-- PDF ingestion
-- evidence retrieval
+**Experiment**
 
-### 3. Database
+- `get_experiment`
+- `search_experiments`
+- `add_experiment`
 
-SQLite stores:
+**Research document**
 
-- experiment metadata
-- research-document metadata
-- extracted research content
-- page-level research content
+- `get_research_document`
+- `add_research_document`
+- `extract_pdf_text`
+- `get_research_content`
+- `search_research_content`
+- `search_research_evidence`
 
-The application uses parameterized SQL values and allowlists dynamic SQLite identifiers.
+**Utility**
 
-### 4. Document ingestion
+- `calculate_dilution`
 
-Research PDFs are registered through document metadata and then processed by `extract_pdf_text`.
+### Resource categories
 
-The ingestion layer enforces:
+**Experiments**
 
-- safe document IDs
-- safe filenames
-- document-directory containment
-- file-size limits
-- page-text limits
-- total extracted-text limits
+```text
+research://experiments
+research://experiments/{experiment_id}
+```
 
-### 5. Local retrieval
+**Documents**
 
-`retrieval.py` implements the current local evidence-retrieval approach.
+```text
+research://documents
+research://documents/{document_id}
+research://documents/{document_id}/content
+research://documents/{document_id}/pages/{page_number}
+```
 
-Pipeline:
+## Data Layer
+
+### SQLite
+
+`database.py` provides the structured experiment/document data layer.
+
+The main database is:
+
+```text
+biomedical.db
+```
+
+Experiment records contain identifiers and research attributes such as cell type, treatment, organism, test, and duration.
+
+### Research Documents
+
+PDFs are stored under:
+
+```text
+documents/
+```
+
+The extraction pipeline uses `pypdf` to convert PDF pages into searchable text.
+
+## Retrieval Layer
+
+`retrieval.py` implements local evidence retrieval.
+
+The pipeline can be summarized as:
 
 ```text
 Question
    |
    v
-Tokenization / keyword extraction
+Cleaning + tokenization
    |
    v
-Intent detection
+Biomedical concept detection
    |
    v
-Scientific concept detection
-   |
-   v
-Query expansion
+Mechanistic query expansion
    |
    v
 Page scoring
    |
    v
-Mechanism-specific sentence selection
+Relevant pages
    |
    v
-Topic relevance validation
-   |
-   v
-Evidence strength
-   |
-   v
-Provenance
+Evidence snippets + provenance
 ```
 
-The current implementation deliberately avoids a paid external embedding API.
+The current implementation uses deterministic lexical/concept-based scoring. It is intentionally local and does not require paid embedding APIs.
 
-### 6. Cross-tool validation
+## Observability
 
-When experiment data and document evidence are combined, the validation layer compares:
-
-- treatment
-- cell model
-- duration
-- mechanism
-
-Hard mismatches in treatment or duration can make the overall result `NOT ALIGNED`.
-
-A cell-model difference alone does not automatically invalidate evidence because research documents can discuss multiple biological models.
-
-### 7. CI
-
-GitHub Actions runs:
+Logging is configured centrally in:
 
 ```text
-Checkout
-   |
-   v
-Python 3.14
-   |
-   v
-uv sync --locked
-   |
-   v
-run_all_tests.py
-   |
-   v
-70 tests
+config.py
 ```
 
-The test suite creates a deterministic test database, so CI does not depend on a developer's ignored local SQLite database.
+Modules obtain named loggers but do not independently configure the root logging system.
 
-## Design principle
+The executor logs:
 
-The central design principle is:
+```text
+tool-plan start
+tool start
+tool completion
+tool duration
+tool failure
+tool-plan completion
+```
 
-> Retrieve evidence, validate its context, and expose its provenance rather than silently treating retrieval as scientific truth.
+The complete user research question is deliberately excluded from executor lifecycle logs.
+
+## Failure Isolation
+
+The execution result contains a dedicated status structure:
+
+```text
+_execution_status
+    search_research_evidence
+        status: SUCCESS
+
+    search_experiments
+        status: FAILED
+        error: ...
+```
+
+This allows the application to continue with successful results while clearly exposing partial failures.
+
+## Security Boundaries
+
+The project applies validation at several layers:
+
+```text
+User Input
+   |
+   v
+Question validation
+   |
+   v
+Planner
+   |
+   v
+Tool argument validation
+   |
+   v
+MCP server
+   |
+   v
+Database / document layer
+```
+
+SQL operations use parameterized queries and controlled column/filter handling.
+
+Document operations validate document identifiers and file paths before processing.
+
+## Deployment Direction
+
+The current architecture is local and single-user oriented.
+
+A future production deployment could separate:
+
+```text
+Client / UI
+     |
+     v
+Agent service
+     |
+     v
+MCP service
+     |
+     +--> production database
+     |
+     +--> document/object storage
+     |
+     +--> retrieval service
+     |
+     +--> authentication / authorization
+     |
+     +--> centralized observability
+```
+
+Those capabilities are not claimed as implemented in the current version.

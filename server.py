@@ -8,14 +8,17 @@ from pathlib import Path
 
 from mcp.server import MCPServer
 
+from config import (
+    DATABASE_PATH,
+    DOCUMENTS_DIR,
+    configure_logging,
+)
+
+
+# Configure logging once at the application entry point.
+configure_logging()
 
 logger = logging.getLogger("biomedical_research_mcp")
-
-if not logger.handlers:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-    )
 
 
 def safe_internal_error(public_message: str, exc: Exception):
@@ -40,13 +43,17 @@ def safe_internal_error(public_message: str, exc: Exception):
 # PATHS
 # ============================================================
 
-BASE_DIR = Path(__file__).resolve().parent
+# Compatibility alias retained for existing tests and code that
+# needs the project root. The actual database path is still controlled
+# centrally by config.py.
+BASE_DIR = DATABASE_PATH.parent
 
-DB_PATH = BASE_DIR / "biomedical.db"
+DB_PATH = DATABASE_PATH
 
-DOCUMENTS_DIR = BASE_DIR / "documents"
-
-DOCUMENTS_DIR.mkdir(exist_ok=True)
+DOCUMENTS_DIR.mkdir(
+    parents=True,
+    exist_ok=True,
+)
 
 
 def secure_document_path(file_name):

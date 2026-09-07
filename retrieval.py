@@ -1,14 +1,14 @@
 import re
 import sqlite3
-from pathlib import Path
+
+from config import DATABASE_PATH
 
 
 # ============================================================
 # CONFIGURATION
 # ============================================================
 
-BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "biomedical.db"
+DB_PATH = DATABASE_PATH
 
 
 # ============================================================

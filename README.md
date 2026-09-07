@@ -1,550 +1,484 @@
-# Biomedical Research MCP Server
+# Biomedical AI MCP
 
-[![Tests](https://github.com/shaiksameer667ss-prog/biomedical-ai-mcp/actions/workflows/tests.yml/badge.svg)](https://github.com/shaiksameer667ss-prog/biomedical-ai-mcp/actions/workflows/tests.yml)
-[![Python](https://img.shields.io/badge/Python-3.14-blue.svg)](https://www.python.org/)
-[![MCP SDK](https://img.shields.io/badge/MCP%20SDK-2.1.1-purple.svg)](https://py.sdk.modelcontextprotocol.io/)
+A local Biomedical Research Assistant and Model Context Protocol (MCP) server for structured experiment data and evidence-based research-document retrieval.
 
-A biomedical research assistant built around the **Model Context Protocol (MCP)**.
+## Overview
 
-The project combines structured biomedical experiment data, research-document ingestion, local evidence retrieval, validation, provenance tracking, and scientific utility tools into an MCP-based workflow.
+This project combines a Python MCP server, a deterministic research agent, a SQLite database, PDF extraction, and local evidence retrieval.
 
-> **Portfolio project:** This is a research-assistance and software-engineering project, not a clinical decision-support system.
+The system is designed as a portfolio project demonstrating practical skills in:
 
-## Why this project?
+- Python application design
+- MCP server/tool development
+- Biomedical research data handling
+- SQLite database integration
+- PDF text extraction
+- Local evidence retrieval
+- Deterministic tool planning
+- Multi-tool execution and failure isolation
+- Evidence provenance and validation
+- Production-oriented logging
+- Automated testing
 
-Biomedical research questions often require several different operations:
-
-- finding structured experiment records
-- inspecting research documents
-- extracting evidence from PDFs
-- matching evidence to the requested treatment or model
-- showing where evidence came from
-- avoiding unsupported combinations of unrelated findings
-
-This project demonstrates how MCP tools can expose those capabilities to a Python agent while keeping validation, retrieval, and provenance logic explicit.
-
-## Key capabilities
-
-- Structured biomedical experiment search using SQLite
-- Experiment retrieval and insertion
-- Research-document registration
-- PDF text extraction with resource limits
-- Page-level research-content search
-- Local mechanism-focused evidence retrieval
-- Evidence-strength classification
-- Evidence provenance chains
-- Multi-tool question planning
-- Cross-tool treatment/cell-model/duration/mechanism alignment
-- Dilution calculation
-- Input and SQL safety controls
-- Environment-based configuration
-- Automated testing with GitHub Actions
-- Locked Python dependencies with `uv.lock`
-
-The current retrieval workflow is fully local and does not require a paid external embedding API.
-
----
+The current implementation is intentionally local and does not require a paid external LLM or paid embedding API.
 
 ## Architecture
 
-```mermaid
-flowchart TD
-    U[Research Question] --> A[Python Agent]
-
-    A --> P[Tool Planning]
-
-    P --> E[Experiment Tools]
-    P --> R[Research Retrieval]
-    P --> D[Document Tools]
-    P --> C[Scientific Utility]
-
-    E --> DB[(SQLite)]
-    D --> DOCS[Research PDFs]
-    D --> DB
-    R --> DB
-    R --> RET[Local Retrieval Pipeline]
-    C --> CALC[Dilution Calculator]
-
-    RET --> QE[Query Expansion]
-    QE --> CM[Concept / Mechanism Detection]
-    CM --> PR[Page Retrieval]
-    PR --> SS[Sentence-Level Scoring]
-    SS --> TV[Topic Relevance]
-    TV --> MF[Mechanism Filtering]
-    MF --> ES[Evidence Strength]
-    ES --> PV[Provenance]
-
-    E --> XV[Cross-Tool Validation]
-    PV --> XV
-
-    XV --> OUT[Validated Research Answer]
-    CALC --> OUT
-    DB --> OUT
-```
-
-### Architecture layers
-
-| Layer | Responsibility |
-|---|---|
-| Python agent | Interprets questions and plans one or more MCP tool calls |
-| MCP server | Exposes tools and research resources |
-| SQLite | Stores experiment and research-document data |
-| Document layer | Registers PDFs and stores extracted page content |
-| Retrieval layer | Performs local query expansion, scoring, and mechanism filtering |
-| Validation layer | Checks topic and experimental-context alignment |
-| Provenance layer | Reports document, page, sentence, mechanism, and retrieval scores |
-| CI/test layer | Verifies production-hardening behavior automatically |
-
-See [`docs/architecture.md`](docs/architecture.md) for a more detailed component view.
-
----
-
-## MCP server
-
-The server exposes tools and resources for biomedical research workflows.
-
-### Tools
-
-| Tool | Purpose |
-|---|---|
-| `calculate_dilution` | Calculate stock and diluent volumes using the dilution equation |
-| `get_experiment` | Retrieve an experiment by ID |
-| `search_experiments` | Search experiments using text and structured filters |
-| `add_experiment` | Add a validated experiment record |
-| `get_research_document` | Retrieve research-document metadata |
-| `add_research_document` | Register a research document |
-| `extract_pdf_text` | Extract and store PDF text and page content |
-| `get_research_content` | Retrieve extracted document content |
-| `search_research_content` | Search extracted research content |
-| `search_research_evidence` | Retrieve mechanism-focused evidence for a research question |
-
-### MCP resources
-
 ```text
-research://experiments
-research://experiments/{experiment_id}
-
-research://documents
-research://documents/{document_id}
-research://documents/{document_id}/content
-research://documents/{document_id}/pages/{page_number}
+User
+  |
+  v
+Biomedical Research Agent
+  |
+  +--> Planner
+  |      |
+  |      +--> selects MCP tools
+  |
+  +--> Executor
+  |      |
+  |      +--> executes tools
+  |      +--> isolates failures
+  |      +--> records execution status
+  |      +--> logs execution events
+  |
+  +--> Validator
+  |      |
+  |      +--> checks cross-tool alignment
+  |
+  +--> Answer Generator
+         |
+         +--> evidence
+         +--> experiments
+         +--> document metadata
+         +--> provenance
+                  |
+                  v
+             MCP Server
+                  |
+       +----------+-----------+
+       |          |           |
+       v          v           v
+   Research   Experiment   Document
+     Tools       Tools       Tools
+       |          |           |
+       +----------+-----------+
+                  |
+          +-------+-------+
+          |               |
+          v               v
+      SQLite DB       Research PDFs
+                          |
+                          v
+                 PDF text extraction
+                          |
+                          v
+                Local evidence retrieval
 ```
 
----
+See [`docs/architecture.md`](docs/architecture.md) for the detailed architecture description.
 
-## Research retrieval pipeline
+## Main Components
 
-The retrieval workflow is designed to avoid treating every text match as scientific evidence.
+### MCP Server
 
-```text
-Research Question
-       |
-       v
-Query expansion
-       |
-       v
-Concept / mechanism detection
-       |
-       v
-Page retrieval
-       |
-       v
-Sentence-level evidence scoring
-       |
-       v
-Topic relevance validation
-       |
-       v
-Mechanism-specific filtering
-       |
-       v
-Evidence strength classification
-       |
-       v
-Provenance
-```
+`server.py` exposes the biomedical capabilities through MCP.
 
-### Evidence strength
+Current MCP tools:
 
-The system distinguishes:
+1. `calculate_dilution`
+2. `get_experiment`
+3. `search_experiments`
+4. `add_experiment`
+5. `get_research_document`
+6. `add_research_document`
+7. `extract_pdf_text`
+8. `get_research_content`
+9. `search_research_content`
+10. `search_research_evidence`
 
-- **DIRECT** — the requested topic and mechanism are explicitly supported by the evidence sentence.
-- **SUPPORTING** — the mechanism is explicit, while part of the topic linkage comes from page context.
-- **WEAK/INDIRECT** — the mechanism is explicit but the requested topic linkage is limited.
+Current MCP resources:
 
-The output can include:
+- `research://experiments`
+- `research://experiments/{experiment_id}`
+- `research://documents`
+- `research://documents/{document_id}`
+- `research://documents/{document_id}/content`
+- `research://documents/{document_id}/pages/{page_number}`
 
-- document ID
-- page number
-- evidence sentence
-- mechanism
-- evidence strength
-- retrieval score
-- direct-topic score
-- page-topic score
-- provenance chain
+### Agent
 
----
+The agent is split into focused modules:
 
-## Cross-tool validation
+- `agent.py` — compatibility entry point
+- `agent_app.py` — application flow and MCP connection
+- `agent_planner.py` — deterministic intent detection and tool planning
+- `agent_executor.py` — MCP tool execution and failure isolation
+- `agent_validator.py` — cross-tool validation
+- `agent_answer.py` — research-answer formatting
 
-When a question requires both experiment data and research evidence, the agent checks alignment across:
+### Data Layer
 
-- treatment
-- cell model
-- duration
-- mechanism
+- `database.py` — SQLite database operations
+- `biomedical.db` — project database
+- `documents/` — research PDFs
+- `retrieval.py` — local evidence retrieval
+
+## Research Workflow
+
+A research question follows this general path:
+
+1. The user submits a biomedical research question.
+2. The planner identifies the required tool domain.
+3. The planner selects one or more MCP tools.
+4. The executor calls the selected tools.
+5. Individual tool failures are isolated so successful results can still be used.
+6. Research evidence is retrieved from extracted document pages.
+7. Experiment data can be retrieved from SQLite.
+8. The validator checks relationships between retrieved evidence and database experiments.
+9. The answer generator produces a structured response with evidence and provenance.
+
+For combined questions, the planner can execute multiple domains in a deterministic order.
 
 Example:
 
-```text
-Experiment:
-  Treatment = Doxorubicin
-  Cell model = Liver Cells
-  Duration = 48 hours
+> What mechanisms are involved in copper nanoparticle toxicity, and what related experiments are in the database?
 
-Retrieved research evidence:
-  Treatment = Copper Nanoparticles
-
-Result:
-  NOT ALIGNED
-```
-
-The agent does not silently present the copper-nanoparticle evidence as support for the doxorubicin experiment.
-
-Possible alignment outcomes:
+This can result in:
 
 ```text
-MATCH
-PARTIALLY ALIGNED
-NOT ALIGNED
-NOT CONFIRMED
+search_research_evidence
+search_experiments
 ```
 
-This is a transparent consistency check, not independent scientific validation.
+The answer can then distinguish literature evidence from database experiment metadata instead of treating them as the same source.
 
----
+## Local Evidence Retrieval
 
-## Security and production hardening
+The project uses a local retrieval implementation in `retrieval.py`.
 
-The server includes defensive controls for:
+It:
 
+- loads extracted document pages
+- tokenizes and expands research questions
+- detects biomedical concepts and mechanisms
+- scores relevant pages
+- creates evidence snippets
+- returns page-level provenance
+
+The current implementation is deliberately lightweight and deterministic. It does not depend on a paid external embedding service.
+
+This makes the project reproducible in a local development environment, while also making its limitations explicit: the retrieval system is not equivalent to a large-scale neural semantic-search stack.
+
+## Example Evidence Domains
+
+The current research workflow includes concepts such as:
+
+- oxidative stress
+- reactive oxygen species (ROS)
+- mitochondrial damage
+- lipid peroxidation
+- DNA damage
+- apoptosis
+- cell membrane damage
+- cell death and reduced viability
+
+The answer layer preserves the distinction between direct and supporting evidence where available.
+
+## Database
+
+The SQLite database contains structured experiment metadata.
+
+The current experiment schema includes:
+
+- `experiment_id`
+- `name`
+- `cell_type`
+- `treatment`
+- `organism`
+- `test`
+- `duration_hours`
+
+The database layer uses parameterized SQL and validation rather than interpolating user-controlled values directly into SQL statements.
+
+## PDF Research Pipeline
+
+Research documents are registered in the database and can be processed through the MCP server.
+
+The extraction workflow is:
+
+```text
+PDF
+ |
+ v
+PDF metadata
+ |
+ v
+pypdf text extraction
+ |
+ +--> full document content
+ |
+ +--> page-level content
+ |
+ v
+SQLite storage
+ |
+ v
+local evidence retrieval
+```
+
+The project includes a research PDF related to copper nanoparticle toxicity.
+
+## Error Handling
+
+The agent is designed so that one failed tool does not necessarily invalidate the complete request.
+
+Execution status is tracked separately:
+
+```text
+_execution_status
+    |
+    +--> tool A: SUCCESS
+    |
+    +--> tool B: FAILED
+```
+
+This allows the answer layer to distinguish complete and partial results.
+
+MCP-level error results are also detected explicitly.
+
+## Observability
+
+Logging is centralized through `config.py`.
+
+The application records operational events such as:
+
+- tool-plan start and completion
+- individual tool start and completion
+- execution duration
+- successful tool execution
+- failed tool execution
+- MCP errors
+- unsupported tool requests
+
+The executor intentionally avoids logging the complete research question.
+
+Logging configuration is not duplicated across individual modules.
+
+## Configuration
+
+Configuration is centralized in `config.py` and can be controlled through environment variables.
+
+Important settings include:
+
+- `BIOMED_DATABASE_PATH`
+- `BIOMED_DOCUMENTS_DIR`
+- `BIOMED_DEFAULT_DOCUMENT_ID`
+- `BIOMED_RESEARCH_TOP_K`
+- `BIOMED_MAX_QUESTION_LENGTH`
+- `BIOMED_LOG_LEVEL`
+- `BIOMED_MCP_SERVER_COMMAND`
+- `BIOMED_MCP_SERVER_SCRIPT`
+
+See `.env.example` for the supported configuration pattern.
+
+## Requirements
+
+The current project targets:
+
+- Python 3.14
+- MCP Python SDK 2.1.1
+- pypdf 6.17.0
+- SQLite
+- uv (recommended for environment management)
+
+The MCP server can be inspected with the MCP development tooling.
+
+## Setup
+
+From the project directory:
+
+```cmd
+uv sync
+```
+
+Or, if the existing virtual environment is already configured:
+
+```cmd
+.venv\Scripts\activate
+```
+
+The project currently uses a local SQLite database and local PDF files.
+
+## Run the MCP Server
+
+The standard development command is:
+
+```cmd
+uv run mcp dev server.py
+```
+
+This opens the MCP development/inspection workflow and allows the exposed tools and resources to be inspected.
+
+## Run the Agent
+
+From the project directory:
+
+```cmd
+.venv\Scripts\python.exe agent.py
+```
+
+The agent connects to the MCP server using the current Python interpreter.
+
+## Run Tests
+
+Run the complete suite:
+
+```cmd
+.venv\Scripts\python.exe run_all_tests.py
+```
+
+The current verified baseline is:
+
+```text
+Tests run: 126
+Failures:  0
+Errors:    0
+```
+
+The test suite covers configuration, security, SQL safety, PDF limits, MCP behavior, planning, execution failure handling, answer quality, logging, and observability.
+
+## Example Questions
+
+### Research evidence
+
+```text
+What mechanisms are involved in copper nanoparticle toxicity?
+```
+
+### Research + experiments
+
+```text
+What mechanisms are involved in copper nanoparticle toxicity, and what related experiments are in the database?
+```
+
+### Experiment search
+
+```text
+Which experiments use doxorubicin?
+```
+
+### Document information
+
+```text
+Show me the research document.
+```
+
+### Combined document + evidence
+
+```text
+Show me the paper and tell me what it says about apoptosis.
+```
+
+## Security and Safety Considerations
+
+The project includes defensive controls around:
+
+- SQL query construction
 - input validation
-- question length limits
-- tool-argument length limits
-- search-result limits
-- evidence `top_k` limits
-- experiment field limits
-- document title/description limits
-- document ID validation
-- PDF filename validation
-- PDF type validation
-- path traversal protection
-- absolute-path rejection
-- document-directory containment checks
-- PDF file-size limits
-- extracted-text limits
-- page-text limits
-- SQLite identifier allowlisting
-- parameterized SQL values
-- generic public error messages
-- internal error logging
-- environment-based configuration
+- numeric validation
+- document identifiers
+- PDF processing
+- tool limits
+- MCP errors
+- unsupported tools
+- execution failures
 
-The test suite also exercises PDF resource limits, SQL/input safety, configuration behavior, alignment logic, and error-safety behavior.
+The system should still be treated as a research-support prototype rather than a clinical decision-support system.
 
----
+It does not establish clinical efficacy, safety, diagnosis, or treatment recommendations.
 
-## Project structure
+## Current Limitations
+
+This is a portfolio/research prototype.
+
+Known limitations include:
+
+- local deterministic retrieval rather than a production-scale vector database
+- limited document corpus
+- SQLite rather than a production database service
+- deterministic planning rather than a general-purpose LLM planner
+- no authentication layer for a deployed multi-user service
+- no production web UI
+- no clinical validation
+- evidence retrieval quality depends on the indexed document content
+
+These limitations are intentional and documented rather than hidden.
+
+## Project Structure
 
 ```text
 biomedical-ai-mcp/
 |
-|-- server.py
-|-- agent.py
-|-- retrieval.py
-|-- database.py
-|-- config.py
-|-- test_database_setup.py
-|-- run_all_tests.py
++-- agent.py
++-- agent_app.py
++-- agent_answer.py
++-- agent_executor.py
++-- agent_planner.py
++-- agent_validator.py
 |
-|-- pyproject.toml
-|-- uv.lock
-|-- README.md
-|-- CONTRIBUTING.md
-|-- LICENSE
-|-- .env.example
-|-- .gitignore
++-- server.py
++-- database.py
++-- retrieval.py
++-- config.py
 |
-|-- .github/
-|   `-- workflows/
-|       `-- tests.yml
++-- biomedical.db
++-- documents/
 |
-|-- documents/
-|   `-- copper_nanoparticle_study.pdf
++-- tests/
++-- docs/
 |
-|-- docs/
-|   `-- architecture.md
-|
-`-- test_*.py
++-- .env.example
++-- .gitignore
++-- CONTRIBUTING.md
++-- LICENSE
++-- pyproject.toml
++-- README.md
++-- run_all_tests.py
 ```
 
-Local runtime data such as `biomedical.db` and research PDFs are intentionally ignored by Git.
-
----
-
-## Requirements
-
-Recommended environment:
-
-- Windows
-- Python 3.14
-- `uv`
-- MCP Python SDK 2.1.1
-- SQLite
-- Node.js only if using optional Claude Code tooling
-
-Dependencies are pinned in `pyproject.toml` and `uv.lock`.
-
-The current local retrieval workflow does not require a paid LLM or paid embedding API.
-
----
-
-## Installation
-
-Clone the repository:
-
-```bash
-git clone https://github.com/shaiksameer667ss-prog/biomedical-ai-mcp.git
-cd biomedical-ai-mcp
-```
-
-Create/sync the environment:
-
-```bash
-uv sync --locked
-```
-
-If `uv` is not installed, install it first from the official `uv` documentation.
-
----
-
-## Running the MCP server
-
-For MCP development and inspection:
-
-```bash
-uv run mcp dev server.py
-```
-
-The MCP Inspector should connect to the server and expose the available tools and resources.
-
-For direct stdio execution:
-
-```bash
-uv run python server.py
-```
-
-The server uses the MCP SDK's asynchronous stdio runner.
-
----
-
-## Running the research agent
-
-Start the Python agent:
-
-```bash
-uv run python agent.py
-```
-
-Example questions:
-
-```text
-Which experiments used liver cells?
-
-Which experiment tested doxorubicin on liver cells for two days?
-
-What mechanisms are involved in copper nanoparticle toxicity?
-
-Show me the research document.
-
-Which experiment tested doxorubicin on liver cells for two days,
-and what does the research document say about the mechanisms of toxicity?
-```
-
-For combined questions, the agent can execute multiple MCP tools and then perform cross-tool relevance/alignment checks.
-
----
-
-## Example MCP workflow
-
-A combined research question follows this pattern:
-
-```text
-User question
-     |
-     v
-Agent identifies required tools
-     |
-     +--> search_experiments
-     |
-     +--> search_research_evidence
-     |
-     v
-Compare experiment and evidence context
-     |
-     v
-Check treatment / cell model / duration / mechanism
-     |
-     v
-Return findings with evidence provenance
-```
-
-Example:
-
-```text
-Question:
-Which experiments involve copper nanoparticles, and what mechanisms
-of toxicity are described in the research document?
-```
-
-Expected workflow:
-
-1. Search structured experiments for copper-nanoparticle treatment.
-2. Retrieve mechanism-focused evidence from the research document.
-3. Compare the treatment and model context.
-4. Report evidence strength and provenance.
-5. Clearly identify any mismatch instead of overclaiming.
-
----
-
-## Running tests
-
-Run the complete test suite:
-
-```bash
-uv run python run_all_tests.py
-```
-
-Current baseline:
-
-```text
-Ran 70 tests
-OK
-```
-
-GitHub Actions runs the same test suite on pushes to `main` and pull requests targeting `main`.
-
-The workflow uses the locked dependency set:
-
-```text
-uv sync --locked
-uv run python run_all_tests.py
-```
-
-A syntax check can also be run with:
-
-```bash
-uv run python -m py_compile server.py
-```
-
----
-
-## Configuration
-
-The application reads configuration from process environment variables.
-
-| Variable | Purpose | Default |
-|---|---|---|
-| `BIOMED_MCP_SERVER_COMMAND` | MCP server command | `python` |
-| `BIOMED_MCP_SERVER_SCRIPT` | MCP server script | `server.py` |
-| `BIOMED_DEFAULT_DOCUMENT_ID` | Default research document | `DOC001` |
-| `BIOMED_RESEARCH_TOP_K` | Number of evidence results | `5` |
-| `BIOMED_MAX_QUESTION_LENGTH` | Maximum agent question length | `2000` |
-| `BIOMED_LOG_LEVEL` | Logging level | `INFO` |
-
-An `.env.example` file documents the supported variables.
-
-> The current application reads environment variables directly; it does not automatically load a `.env` file.
-
-Windows example:
-
-```cmd
-set BIOMED_RESEARCH_TOP_K=8
-uv run python agent.py
-```
-
----
-
-## Current example dataset
-
-The example database contains experiments such as:
-
-- Cytotoxicity study using copper nanoparticles on skin cells
-- Antimicrobial susceptibility study using bacterial culture
-- Drug cytotoxicity study using doxorubicin on liver cells
-
-The example research document is a review concerning manufactured copper nanoparticles and their toxicological mechanisms.
-
----
-
-## Limitations
-
-This is a portfolio and research-assistance project, not a clinical decision-support system.
-
-Important limitations:
-
-- Local retrieval is not equivalent to a production vector database.
-- Evidence retrieval does not establish causality.
-- Topic alignment is not independent scientific verification.
-- The example dataset is small.
-- The current system does not replace expert literature review.
-- Scientific conclusions depend on the source documents available to the system.
-
----
-
-## Future improvements
-
-Planned production-oriented improvements include:
-
-1. Cleaner package/module structure
-2. Larger research-document datasets
-3. Optional local embedding/vector retrieval
-4. Improved document provenance
-5. More robust observability
-6. Authentication/authorization for network deployments
-7. Containerized deployment
-8. MCP/API deployment documentation
-9. Retrieval evaluation datasets
-10. Broader integration and end-to-end tests
-
-Continuous integration and core production hardening are already implemented.
-
----
-
-## Portfolio value
-
-This project demonstrates practical experience with:
-
-- Python
-- MCP
-- AI agent tool planning
-- Retrieval-augmented research workflows
-- Biomedical informatics
-- SQLite
-- PDF processing
-- Information retrieval
-- Evidence extraction
-- Data validation
-- Cross-tool reasoning
-- Security hardening
-- Configuration management
-- Automated testing
-- CI/CD
-- Software engineering practices
-
----
+Legacy and experimental files are kept separately under `archive/legacy/` rather than mixed into the production-facing project structure.
+
+## Roadmap
+
+The project roadmap includes:
+
+- production documentation
+- architecture documentation
+- Git/GitHub preparation
+- final end-to-end demonstration
+- stronger retrieval strategies
+- broader document collections
+- additional biomedical tools
+- optional LLM-based agent orchestration
+- deployment hardening
+
+## Portfolio Positioning
+
+This project demonstrates an end-to-end biomedical AI engineering workflow rather than a single isolated model.
+
+The strongest portfolio themes are:
+
+- MCP protocol implementation
+- biomedical research workflows
+- tool-using agent architecture
+- local retrieval/RAG concepts
+- structured data + unstructured documents
+- multi-tool orchestration
+- evidence provenance
+- defensive engineering
+- automated testing
+- production-oriented observability
 
 ## License
 
-This project is intended as a portfolio/educational software project. See `LICENSE` for the current license terms.
+See [`LICENSE`](LICENSE).
