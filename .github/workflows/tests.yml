@@ -5,6 +5,13 @@ on:
     branches:
       - main
   pull_request:
+name: Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
     branches:
       - main
 
@@ -29,5 +36,9 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --locked
 
+      - name: Initialize test database
+        run: uv run python database.py
+
       - name: Run test suite
+        run: uv run python run_all_tests.py
         run: uv run python run_all_tests.py
